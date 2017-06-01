@@ -736,6 +736,14 @@ template <typename... Args> struct overload_cast {
 
 NAMESPACE_BEGIN(detail)
 
+// std::conjuction is present in C++17, but not earlier
+// Taken from example implementation at http://en.cppreference.com/w/cpp/types/conjunction
+template<class...> struct conjunction : std::true_type { };
+template<class B1> struct conjunction<B1> : B1 { };
+template<class B1, class... Bn>
+struct conjunction<B1, Bn...>
+  : std::conditional_t<bool(B1::value), conjunction<Bn...>, B1> {};
+
 // Adaptor for converting arbitrary container arguments into a vector; implicitly convertible from
 // any standard container (or C-style array) supporting std::begin/std::end, any singleton
 // arithmetic type (if T is arithmetic), or explicitly constructible from an iterator pair.
@@ -753,9 +761,13 @@ public:
     template <typename Container, typename = enable_if_t<std::is_convertible<decltype(*std::begin(std::declval<const Container &>())), T>::value>>
     any_container(const Container &c) : any_container(std::begin(c), std::end(c)) { }
 
-    // initializer_list's aren't deducible, so don't get matched by the above template; we need this
-    // to explicitly allow implicit conversion from one:
-    any_container(const std::initializer_list<T> &c) : any_container(c.begin(), c.end()) { }
+  // If a list of values, such as an initializer list, are passed in,
+  // then convert each to T.
+  template <typename ...TIn,
+            typename = std::enable_if_t<conjunction<std::is_convertible<TIn, T>...>::value>
+            >
+  any_container(TIn... t)
+    : any_container(std::vector<T>{T(t)...}) { }
 
     // Avoid copying if given an rvalue vector of the correct type.
     any_container(std::vector<T> &&v) : v(std::move(v)) { }
